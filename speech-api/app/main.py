@@ -168,7 +168,7 @@ def get_tts():
             dtype=torch.float16,
             load_asr=load_asr,
         )
-        logger.info("TTS model ready")
+        logger.info("TTS model reaady")
     return _tts_model
 
 
