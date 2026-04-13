@@ -1,0 +1,21 @@
+services:
+  speech-api:
+    build: .
+    container_name: speech-api
+    restart: always
+    network_mode: host
+    volumes:
+      - /workspace/speech-api:/workspace/speech-api
+      - /workspace/OmniVoice:/workspace/OmniVoice:ro
+      - /workspace/voices:/workspace/voices
+    environment:
+      - HF_HOME=/tmp/hf_home
+      - OMNILINGUAL_ASR_DIR=/workspace/OmniVoice/asr_models/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12
+      - OMNIVOICE_MODEL=k2-fsa/OmniVoice
+      - VOICES_DIR=/workspace/voices
+      - CUSTOM_VOICES_DIR=/workspace/voices/custom
+      - PRELOAD_STT=false
+      - PRELOAD_TTS=false
+      - PORT=3000
+      - NVIDIA_VISIBLE_DEVICES=all
+    gpus: all

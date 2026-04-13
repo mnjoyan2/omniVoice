@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OmniVoice TTS</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; background: #0f1419; color: #e7e9ea; }
+    body { margin: 0 auto; max-width: 36rem; padding: 1.5rem; }
+    h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 1rem; }
+    label { display: block; font-size: 0.75rem; color: #8b98a5; margin: 0.75rem 0 0.25rem; }
+    input, select, textarea { width: 100%; box-sizing: border-box; padding: 0.5rem 0.6rem;
+      border: 1px solid #38444d; border-radius: 6px; background: #15202b; color: inherit; font: inherit; }
+    textarea { min-height: 5rem; resize: vertical; }
+    .row { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .row > * { flex: 1; min-width: 8rem; }
+    button { margin-top: 1rem; padding: 0.55rem 1rem; border: none; border-radius: 6px;
+      background: #1d9bf0; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .err { margin-top: 0.75rem; padding: 0.6rem; border-radius: 6px; background: #3d1717; color: #f9a8a8; font-size: 0.875rem; white-space: pre-wrap; }
+    audio { width: 100%; margin-top: 1rem; }
+    .hint { font-size: 0.7rem; color: #71767b; margin-top: 0.2rem; }
+    fieldset { border: 1px solid #38444d; border-radius: 8px; padding: 0.75rem 1rem; margin-top: 1rem; }
+    legend { font-size: 0.8rem; color: #8b98a5; padding: 0 0.25rem; }
+  </style>
+</head>
+<body>
+  <h1>OmniVoice</h1>
+  <form id="f">
+    <label for="text">Text</label>
+    <textarea id="text" required placeholder="Type what you want spoken"></textarea>
+
+    <div class="row">
+      <div>
+        <label for="voice">Voice</label>
+        <select id="voice"><option value="">Default</option></select>
+      </div>
+      <div>
+        <label for="language">Language</label>
+        <input id="language" placeholder="e.g. English, auto" />
+      </div>
+    </div>
+
+    <label for="instruct">Voice design (optional)</label>
+    <input id="instruct" placeholder="Describe how it should sound" />
+    <p class="hint">Leave empty for plain TTS. Use with or without a preset voice.</p>
+
+    <fieldset>
+      <legend>Clone (optional)</legend>
+      <label for="ref_text">Reference transcript</label>
+      <input id="ref_text" placeholder="Exact words in the reference clip" />
+      <label for="ref_audio" style="margin-top:0.5rem">Reference audio</label>
+      <input id="ref_audio" type="file" accept="audio/*" />
+    </fieldset>
+
+    <div class="row">
+      <div>
+        <label for="format">Format</label>
+        <select id="format"><option value="wav">wav</option><option value="mp3">mp3</option></select>
+      </div>
+      <div>
+        <label for="num_step">Steps</label>
+        <input id="num_step" type="number" value="32" min="1" max="128" />
+      </div>
+      <div>
+        <label for="guidance_scale">Guidance</label>
+        <input id="guidance_scale" type="number" value="2" step="0.1" min="0" />
+      </div>
+      <div>
+        <label for="speed">Speed</label>
+        <input id="speed" type="number" value="1" step="0.05" min="0.25" max="4" />
+      </div>
+    </div>
+
+    <button type="submit" id="go">Synthesize</button>
+  </form>
+  <div id="err" class="err" hidden></div>
+  <audio id="player" controls></audio>
+  <div style="margin-top:0.5rem"><a id="dl" href="#" download hidden>Download</a></div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let lastUrl = null;
+
+    async function loadVoices() {
+      const r = await fetch("/api/voices");
+      const j = await r.json();
+      const sel = $("voice");
+      j.voices.sort((a, b) => a.name.localeCompare(b.name));
+      for (const v of j.voices) {
+        const opt = document.createElement("option");
+        opt.value = v.name;
+        opt.textContent = v.name + (v.custom ? " (custom)" : "");
+        sel.appendChild(opt);
+      }
+    }
+
+    $("f").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const err = $("err");
+      err.hidden = true;
+      if (lastUrl) URL.revokeObjectURL(lastUrl);
+      lastUrl = null;
+      $("player").removeAttribute("src");
+      $("dl").hidden = true;
+
+      const fd = new FormData();
+      fd.append("text", $("text").value.trim());
+      const v = $("voice").value;
+      if (v) fd.append("voice", v);
+      const lang = $("language").value.trim();
+      if (lang) fd.append("language", lang);
+      const ins = $("instruct").value.trim();
+      if (ins) fd.append("instruct", ins);
+      const rt = $("ref_text").value.trim();
+      if (rt) fd.append("ref_text", rt);
+      const rf = $("ref_audio").files[0];
+      if (rf) fd.append("ref_audio", rf);
+      fd.append("format", $("format").value);
+      fd.append("num_step", $("num_step").value);
+      fd.append("guidance_scale", $("guidance_scale").value);
+      fd.append("speed", $("speed").value);
+
+      $("go").disabled = true;
+      try {
+        const res = await fetch("/tts", { method: "POST", body: fd });
+        const blob = await res.blob();
+        if (!res.ok) {
+          let msg = await blob.text();
+          try { msg = JSON.parse(msg).detail || msg; } catch (_) {}
+          throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+        }
+        lastUrl = URL.createObjectURL(blob);
+        $("player").src = lastUrl;
+        const ext = $("format").value;
+        $("dl").href = lastUrl;
+        $("dl").download = "omnivoice." + ext;
+        $("dl").hidden = false;
+      } catch (x) {
+        err.textContent = x.message || String(x);
+        err.hidden = false;
+      } finally {
+        $("go").disabled = false;
+      }
+    });
+
+    loadVoices().catch(() => {});
+  </script>
+</body>
+</html>
